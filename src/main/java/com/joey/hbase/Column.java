@@ -1,12 +1,13 @@
 package com.joey.hbase;
 
+import java.io.Serializable;
 import java.util.Arrays;
 
 /**
  * @author joey.wen
  * @date 2014/12/29
  */
-public class Column {
+public class Column implements Serializable {
     private String family;
     private String qualifier;
     private byte[] value;

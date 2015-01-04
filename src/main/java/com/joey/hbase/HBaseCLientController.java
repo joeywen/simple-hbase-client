@@ -11,14 +11,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
+ * Non-thread-safe, Use threadLocal to wrapper this class in multi-thread
  * @author joey.wen
  * @date 2014/12/30
  */
@@ -30,7 +27,7 @@ public final class HBaseCLientController {
     private final static String ZOOKEEPER_ZNODE_PARENT="/hbase";
 
     // private static Map<String, RowEntry> rowEntryMap = Maps.newConcurrentMap();
-    private static LinkedBlockingQueue<Map<String, List<RowEntry>>> rotateCache = new LinkedBlockingQueue<Map<String, List<RowEntry>>>(2);
+    private static LinkedList<Map<String, List<RowEntry>>> rotateCache = new LinkedList<Map<String, List<RowEntry>>>();
 
     protected static HConnection getConnection() throws ZooKeeperConnectionException {
         return getConnection(DEFAULT_CONFIG);
@@ -56,7 +53,7 @@ public final class HBaseCLientController {
     private boolean commit() {
         Map<String, List<RowEntry>> cache = rotateCache.poll();
         // add new map to rotateCache
-        rotateCache.offer(new ConcurrentHashMap<String, List<RowEntry>>());
+        rotateCache.offer(new HashMap<String, List<RowEntry>>());
 
         Iterator<Map.Entry<String, List<RowEntry>>> iterator = cache.entrySet().iterator();
         String tableName;

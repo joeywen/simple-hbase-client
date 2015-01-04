@@ -15,10 +15,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * Non-thread-safe, Use threadLocal to wrapper this class in multi-thread
  * @author joey.wen
  * @date 2014/12/29
  *
- * non-thread-safe
  */
 public class HBaseClientImpl implements HBaseClientInterface {
 
