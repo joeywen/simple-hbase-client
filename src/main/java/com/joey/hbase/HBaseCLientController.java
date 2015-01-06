@@ -11,11 +11,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
- * Non-thread-safe, Use threadLocal to wrapper this class in multi-thread
  * @author joey.wen
  * @date 2014/12/30
  */
@@ -25,21 +28,25 @@ public final class HBaseCLientController {
     private static Configuration DEFAULT_CONFIG = null;//
     private final static String HBASE_RPC_ENGINE="org.apache.hadoop.hbase.ipc.SecureRpcEngine";
     private final static String ZOOKEEPER_ZNODE_PARENT="/hbase";
+    private static HTablePool hTablePool = null;
 
-    // private static Map<String, RowEntry> rowEntryMap = Maps.newConcurrentMap();
-    private static LinkedList<Map<String, List<RowEntry>>> rotateCache = new LinkedList<Map<String, List<RowEntry>>>();
+       // private static Map<String, RowEntry> rowEntryMap = Maps.newConcurrentMap();
+    private static LinkedBlockingQueue<Map<String, List<RowEntry>>> rotateCache = new LinkedBlockingQueue<Map<String, List<RowEntry>>>(2);
 
-    protected static HConnection getConnection() throws ZooKeeperConnectionException {
-        return getConnection(DEFAULT_CONFIG);
+    protected static HTableInterface getTable(String tableName) throws ZooKeeperConnectionException {
+        return getConnection(DEFAULT_CONFIG, tableName);
     }
 
-    protected static HConnection getConnection(Configuration config) throws ZooKeeperConnectionException {
+    protected static HTableInterface getConnection(Configuration config, final String tableName) throws ZooKeeperConnectionException {
         if (config == null) {
             // use default configuration
             config = initConfiguration();
         }
 
-        return HConnectionManager.getConnection(config);
+        if (hTablePool == null) {
+            hTablePool = SimpleHTableInterfaceFactory.createPool(config);
+        }
+        return hTablePool.getTable(Bytes.toBytes(tableName));
     }
 
     protected static Map<String, List<RowEntry>> first() {
@@ -50,31 +57,43 @@ public final class HBaseCLientController {
         rotateCache.offer(cache);
     }
 
-    private boolean commit() {
+    protected static boolean commit() {
         Map<String, List<RowEntry>> cache = rotateCache.poll();
+        if (cache == null || cache.isEmpty()) return false;
+
         // add new map to rotateCache
-        rotateCache.offer(new HashMap<String, List<RowEntry>>());
+        rotateCache.offer(new ConcurrentHashMap<String, List<RowEntry>>());
 
         Iterator<Map.Entry<String, List<RowEntry>>> iterator = cache.entrySet().iterator();
         String tableName;
         while (iterator.hasNext()) {
             Map.Entry<String, List<RowEntry>> entry = iterator.next();
             tableName = entry.getKey();
+            HTableInterface htable = null;
             try {
-                getConnection().getTable(tableName).batch(optimize(entry.getValue()));
+                htable = getTable(tableName);
+                htable.batch(optimize(entry.getValue()));
             } catch (IOException e) {
                 e.printStackTrace();
                 LOG.error("", e);
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 LOG.error("", e);
+            } finally {
+                if (htable != null) {
+                    try {
+                        htable.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         }
         return true;
     }
 
 
-    private List<Row> generateRowList(Map<Integer, RowEntry> commandMap) {
+    private static List<Row> generateRowList(Map<Integer, RowEntry> commandMap) {
         List<Row> cmds = new ArrayList<Row>();
         Map<Integer, Row> results = Maps.newHashMap();
         Iterator<Map.Entry<Integer, RowEntry>> iterator = commandMap.entrySet().iterator();
@@ -120,7 +139,7 @@ public final class HBaseCLientController {
         return cmds;
     }
 
-    private List<? extends Row> optimize(List<RowEntry> entries) {
+    private static List<? extends Row> optimize(List<RowEntry> entries) {
         Map<Integer, RowEntry> commandMap = new ConcurrentHashMap<Integer, RowEntry>();
 
         for (final RowEntry rowEntry : entries) {
@@ -166,6 +185,7 @@ public final class HBaseCLientController {
 
     private static Configuration initConfiguration() {
         DEFAULT_CONFIG = HBaseConfiguration.create();
+        ConfigLoader.load();
 
         String quorum = ConfigLoader.get("hbase.zookeeper.quorum");
         String clientPort = ConfigLoader.get("hbase.zookeeper.property.clientPort");

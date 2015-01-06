@@ -35,5 +35,7 @@ public interface HBaseClientInterface {
     public ResultScanner getScanner(final String tableName, final String family);
     public ResultScanner getScanner(final String tableName, final String family, final String qualifier);
     public ResultScanner getScanner(final String tableName, final Scan scan);
+
+    public boolean commit();
 }
 

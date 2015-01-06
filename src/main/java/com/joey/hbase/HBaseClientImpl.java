@@ -15,10 +15,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Non-thread-safe, Use threadLocal to wrapper this class in multi-thread
  * @author joey.wen
  * @date 2014/12/29
  *
+ * non-thread-safe
  */
 public class HBaseClientImpl implements HBaseClientInterface {
 
@@ -64,7 +64,11 @@ public class HBaseClientImpl implements HBaseClientInterface {
         }
 
         List<RowEntry> list = cache.get(rowEntry.getTableName());
-        list.add(rowEntry);
+        if (list == null) {
+            cache.put(rowEntry.getTableName(), new ArrayList<RowEntry>(){{add(rowEntry);}});
+        } else {
+            list.add(rowEntry);
+        }
 
         return true;
     }
@@ -113,9 +117,8 @@ public class HBaseClientImpl implements HBaseClientInterface {
             return null;
         }
 
-        HConnection connection = null;
+        HTableInterface htable = null;
         try {
-            connection = HBaseCLientController.getConnection();
             Get get = new Get(Bytes.toBytes(rowKey));
             if (!StringUtils.isEmpty(family)) {
                 if (StringUtils.isEmpty(qualifier)) {
@@ -124,7 +127,8 @@ public class HBaseClientImpl implements HBaseClientInterface {
                     get.addColumn(Bytes.toBytes(family), Bytes.toBytes(qualifier));
                 }
             }
-            return connection.getTable(Bytes.toBytes(tableName)).get(get);
+            htable = HBaseCLientController.getTable(tableName);
+            return htable.get(get);
         } catch (ZooKeeperConnectionException e) {
             e.printStackTrace();
             LOG.error("ZooKeeperConnectionException ERROR: ", e);
@@ -132,9 +136,9 @@ public class HBaseClientImpl implements HBaseClientInterface {
             e.printStackTrace();
             LOG.error("IOException ERROR: ", e);
         } finally {
-            if (connection != null) {
+            if (htable != null) {
                 try {
-                    connection.close();
+                    htable.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                     LOG.error("Close HBase connection error. ", e);
@@ -162,7 +166,7 @@ public class HBaseClientImpl implements HBaseClientInterface {
                     tableName, rowKey));
             return false;
         }
-        HConnection connection = null;
+        HTableInterface htable = null;
         try {
             Delete del = new Delete(Bytes.toBytes(rowKey));
             if (!StringUtils.isEmpty(family)) {
@@ -172,16 +176,17 @@ public class HBaseClientImpl implements HBaseClientInterface {
                     del.deleteFamily(Bytes.toBytes(family));
                 }
             }
-            connection.getTable(Bytes.toBytes(tableName)).delete(del);
+            htable = HBaseCLientController.getTable(tableName);
+            htable.delete(del);
             return true;
         } catch (IOException e) {
             e.printStackTrace();
             LOG.error("Delete rowkey error. ", e);
             return false;
         } finally {
-            if (connection != null) {
+            if (htable != null) {
                 try {
-                    connection.close();
+                    htable.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                     LOG.error("Close HBase connection error. ", e);
@@ -218,7 +223,7 @@ public class HBaseClientImpl implements HBaseClientInterface {
     public ResultScanner getScanner(String tableName, Scan scan) {
         HTableInterface htable = null;
         try {
-            htable = HBaseCLientController.getConnection().getTable(Bytes.toBytes(tableName));
+            htable = HBaseCLientController.getTable(tableName);
             return htable.getScanner(scan);
         } catch (IOException e) {
             e.printStackTrace();
@@ -235,5 +240,9 @@ public class HBaseClientImpl implements HBaseClientInterface {
         }
     }
 
+    @Override
+    public boolean commit() {
+        return HBaseCLientController.commit();
+    }
 
 }
